@@ -1,0 +1,22 @@
+{
+    "version": 2,
+    "builds": [
+      {
+        "src": "server/server.js",
+        "use": "@vercel/node"
+      }
+    ],
+    "routes": [
+      {
+        "src": "/(.*)",
+        "dest": "server/server.js"
+      }
+    ],
+    "env": {
+      "ACCESS_TOKEN_SECRET": "a1s2d3f4g5h6",
+      "REFRESH_TOKEN_SECRET": "a1s2d3f4g5h6j7",
+      "MONGO_URI": "mongodb+srv://kalyanseervi700:Pqk5YKb187kyfkNu@cluster0.sxw2jd1.mongodb.net/videochat?authMechanism=DEFAULT",
+      "PORT": "3000"
+    }
+  }
+  
