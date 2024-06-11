@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
-require('dotenv').config();
+
 
 const app = express();
 const server = http.createServer(app);
