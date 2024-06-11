@@ -31,7 +31,8 @@
             class="p-2 mb-2 w-full max-w-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
         <input type="password" id="registerPassword" placeholder="Password"
             class="p-2 mb-4 w-full max-w-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-        <button id="registerButton" class="w-full max-w-sm bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-md mb-2">
+        <button id="registerButton"
+            class="w-full max-w-sm bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-md mb-2">
             Register
         </button>
         <button id="showLogin" class="w-full max-w-sm bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-md">
@@ -41,237 +42,267 @@
 
     <div id="videoChat" class="hidden flex flex-col items-center bg-white p-6 rounded-lg shadow-lg text-black">
         <h1 class="text-2xl font-bold mb-4">Video Conferencing with Chat</h1>
+        <input type="text" id="roomInput" placeholder="Room Name"
+            class="p-2 mb-4 w-full max-w-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
         <div class="flex space-x-4 mb-4">
-            <button id="startVideoButton" class="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md">
-                <i class="fas fa-video"></i> Start Video
+            <button id="joinRoomButton" class="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md">
+                Join Room
             </button>
-            <button id="endVideoButton" class="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md hidden">
-                <i class="fas fa-video-slash"></i> End Video
+            <button id="leaveRoomButton" class="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md hidden">
+                Leave Room
             </button>
         </div>
-        <video id="localVideo" autoplay muted class="w-full max-w-md mb-4 rounded-md shadow-md"></video>
-        <video id="remoteVideo" autoplay class="w-full max-w-md mb-4 rounded-md shadow-md"></video>
-        <div id="chat" class="w-full max-w-md h-48 border p-4 overflow-y-scroll bg-gray-100 rounded-md shadow-inner mb-4"></div>
+        <div id="videos" class="flex flex-wrap justify-center mb-4"></div>
+        <div id="users" class="w-full max-w-md border p-4 bg-gray-100 rounded-md shadow-inner mb-4"></div>
+        <div id="chat"
+            class="w-full max-w-md h-48 border p-4 overflow-y-scroll bg-gray-100 rounded-md shadow-inner mb-4"></div>
         <input type="text" id="chatInput" placeholder="Type a message..."
             class="p-2 w-full max-w-md border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-
     <script>
-        const localVideo = document.getElementById('localVideo');
-const remoteVideo = document.getElementById('remoteVideo');
-const chat = document.getElementById('chat');
-const chatInput = document.getElementById('chatInput');
-const loginDiv = document.getElementById('login');
-const registerDiv = document.getElementById('register');
-const videoChatDiv = document.getElementById('videoChat');
-const loginUsername = document.getElementById('loginUsername');
-const loginPassword = document.getElementById('loginPassword');
-const registerUsername = document.getElementById('registerUsername');
-const registerPassword = document.getElementById('registerPassword');
-const loginButton = document.getElementById('loginButton');
-const registerButton = document.getElementById('registerButton');
-const showRegister = document.getElementById('showRegister');
-const showLogin = document.getElementById('showLogin');
-const startVideoButton = document.getElementById('startVideoButton');
-const endVideoButton = document.getElementById('endVideoButton');
+        const localVideo = document.createElement('video');
+        const remoteVideos = document.getElementById('videos');
+        const chat = document.getElementById('chat');
+        const chatInput = document.getElementById('chatInput');
+        const loginDiv = document.getElementById('login');
+        const registerDiv = document.getElementById('register');
+        const videoChatDiv = document.getElementById('videoChat');
+        const loginUsername = document.getElementById('loginUsername');
+        const loginPassword = document.getElementById('loginPassword');
+        const registerUsername = document.getElementById('registerUsername');
+        const registerPassword = document.getElementById('registerPassword');
+        const loginButton = document.getElementById('loginButton');
+        const registerButton = document.getElementById('registerButton');
+        const showRegister = document.getElementById('showRegister');
+        const showLogin = document.getElementById('showLogin');
+        const joinRoomButton = document.getElementById('joinRoomButton');
+        const leaveRoomButton = document.getElementById('leaveRoomButton');
+        const roomInput = document.getElementById('roomInput');
 
-let accessToken;
-let localStream;
-let peerConnection;
-let socket;
-let username;
+        let accessToken;
+        let localStream;
+        let peerConnections = {};
+        let socket;
+        let username;
 
-const config = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-    ]
-};
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
 
-showRegister.addEventListener('click', () => {
-    loginDiv.style.display = 'none';
-    registerDiv.style.display = 'block';
-});
+        localVideo.autoplay = true;
+        localVideo.muted = true;
+        localVideo.classList.add('w-full', 'max-w-md', 'mb-4', 'rounded-md', 'shadow-md');
+        remoteVideos.appendChild(localVideo);
 
-showLogin.addEventListener('click', () => {
-    registerDiv.style.display = 'none';
-    loginDiv.style.display = 'block';
-});
+        showRegister.addEventListener('click', () => {
+            loginDiv.style.display = 'none';
+            registerDiv.style.display = 'block';
+        });
 
-registerButton.addEventListener('click', async () => {
-    const username = registerUsername.value;
-    const password = registerPassword.value;
+        showLogin.addEventListener('click', () => {
+            registerDiv.style.display = 'none';
+            loginDiv.style.display = 'block';
+        });
 
-    const response = await fetch('/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-    });
+        registerButton.addEventListener('click', async () => {
+            const username = registerUsername.value;
+            const password = registerPassword.value;
 
-    if (response.ok) {
-        alert('Registration successful');
-        registerDiv.style.display = 'none';
-        loginDiv.style.display = 'block';
-    } else {
-        alert('Registration failed');
-    }
-});
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
 
-loginButton.addEventListener('click', async () => {
-    username = loginUsername.value;
-    const password = loginPassword.value;
+            if (response.ok) {
+                alert('Registration successful');
+                registerDiv.style.display = 'none';
+                loginDiv.style.display = 'block';
+            } else {
+                alert('Registration failed');
+            }
+        });
 
-    const response = await fetch('/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-    });
+        loginButton.addEventListener('click', async () => {
+            username = loginUsername.value;
+            const password = loginPassword.value;
 
-    if (response.ok) {
-        const data = await response.json();
-        accessToken = data.accessToken;
-        videoChatDiv.style.display = 'block';
-        loginDiv.style.display = 'none';
-        initializeSocket();
-    } else {
-        alert('Login failed');
-    }
-});
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
 
-async function refreshAccessToken() {
-    const response = await fetch('/token', {
-        method: 'POST',
-        credentials: 'include'
-    });
+            if (response.ok) {
+                const data = await response.json();
+                accessToken = data.accessToken;
+                videoChatDiv.style.display = 'block';
+                loginDiv.style.display = 'none';
+                initializeSocket();
+            } else {
+                alert('Login failed');
+            }
+        });
 
-    if (response.ok) {
-        const data = await response.json();
-        accessToken = data.accessToken;
-    } else {
-        alert('Session expired. Please log in again.');
-        loginDiv.style.display = 'block';
-        videoChatDiv.style.display = 'none';
-    }
-}
+        async function refreshAccessToken() {
+            const response = await fetch('/token', {
+                method: 'POST',
+                credentials: 'include'
+            });
 
-function initializeSocket() {
-    socket = io({
-        query: { token: accessToken }
-    });
-
-    socket.on('connect_error', async (err) => {
-        if (err.message === 'Authentication error') {
-            await refreshAccessToken();
-            socket.io.opts.query.token = accessToken;
-            socket.connect();
+            if (response.ok) {
+                const data = await response.json();
+                accessToken = data.accessToken;
+            } else {
+                alert('Session expired. Please log in again.');
+                loginDiv.style.display = 'block';
+                videoChatDiv.style.display = 'none';
+            }
         }
-    });
 
-    socket.on('joined', () => {
-        createPeerConnection();
-        if (localStream) {
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        function initializeSocket() {
+            socket = io({
+                query: { token: accessToken }
+            });
+
+            socket.on('connect_error', async (err) => {
+                if (err.message === 'Authentication error') {
+                    await refreshAccessToken();
+                    socket.io.opts.query.token = accessToken;
+                    socket.connect();
+                }
+            });
+
+            socket.on('user-joined', async ({ username, users }) => {
+                await createPeerConnection(username);
+                updateUsersList(users);
+                if (localStream) {
+                    const offer = await peerConnections[username].createOffer();
+                    await peerConnections[username].setLocalDescription(offer);
+                    socket.emit('offer', { offer, target: username });
+                }
+            });
+
+            socket.on('user-left', ({ username, users }) => {
+                if (peerConnections[username]) {
+                    peerConnections[username].close();
+                    delete peerConnections[username];
+                }
+                const remoteVideo = document.getElementById(`video-${username}`);
+                if (remoteVideo) remoteVideo.remove();
+                updateUsersList(users);
+            });
+
+            socket.on('offer', async ({ offer, from }) => {
+                if (!peerConnections[from]) await createPeerConnection(from);
+                await peerConnections[from].setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await peerConnections[from].createAnswer();
+                await peerConnections[from].setLocalDescription(answer);
+                socket.emit('answer', { answer, target: from });
+            });
+
+            socket.on('answer', async ({ answer, from }) => {
+                await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+            });
+
+            socket.on('ice-candidate', async ({ candidate, from }) => {
+                if (candidate) {
+                    await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            });
+
+            socket.on('chat-message', ({ username, message, timestamp }) => {
+                displayMessage({ username, message, timestamp });
+            });
+
+            joinRoomButton.addEventListener('click', async () => {
+                const room = roomInput.value;
+                if (!room) {
+                    alert('Please enter a room name');
+                    return;
+                }
+                joinRoomButton.classList.add('hidden');
+                leaveRoomButton.classList.remove('hidden');
+                await startLocalStream();
+                socket.emit('join', room);
+            });
+
+            leaveRoomButton.addEventListener('click', () => {
+                leaveRoomButton.classList.add('hidden');
+                joinRoomButton.classList.remove('hidden');
+                stopLocalStream();
+                socket.emit('leave');
+            });
+
+            chatInput.addEventListener('keypress', event => {
+                if (event.key === 'Enter') {
+                    const message = chatInput.value;
+                    const timestamp = new Date().toLocaleTimeString();
+                    socket.emit('chat-message', { message, room: roomInput.value });
+                    chatInput.value = '';
+                    displayMessage({ username: 'You', message, timestamp });
+                }
+            });
         }
-    });
 
-    socket.on('offer', async (offer) => {
-        if (!peerConnection) createPeerConnection();
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('answer', answer);
-    });
+        async function createPeerConnection(username) {
+            const peerConnection = new RTCPeerConnection(config);
 
-    socket.on('answer', async (answer) => {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
+            peerConnection.onicecandidate = ({ candidate }) => {
+                if (candidate) {
+                    socket.emit('ice-candidate', { candidate, target: username });
+                }
+            };
 
-    socket.on('ice-candidate', async (candidate) => {
-        try {
-            await peerConnection.addIceCandidate(candidate);
-        } catch (e) {
-            console.error('Error adding received ice candidate', e);
+            peerConnection.ontrack = (event) => {
+                const remoteVideo = document.createElement('video');
+                remoteVideo.autoplay = true;
+                remoteVideo.id = `video-${username}`;
+                remoteVideo.classList.add('w-full', 'max-w-md', 'mb-4', 'rounded-md', 'shadow-md');
+                remoteVideo.srcObject = event.streams[0];
+                remoteVideos.appendChild(remoteVideo);
+            };
+
+            peerConnections[username] = peerConnection;
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+            }
+
+            return peerConnection;
         }
-    });
 
-    socket.on('chat-message', ({ username, message, timestamp }) => {
-        displayMessage({ username, message, timestamp });
-    });
+        async function startLocalStream() {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideo.srcObject = localStream;
+        }
 
-    socket.on('start-video', () => {
-        if (!localStream) startVideoButton.click();
-    });
-
-    socket.on('end-video', () => {
-        if (localStream) endVideoButton.click();
-    });
-
-    startVideoButton.addEventListener('click', () => {
-        startVideoButton.classList.add('hidden');
-        endVideoButton.classList.remove('hidden');
-
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then(stream => {
-                localVideo.srcObject = stream;
-                localStream = stream;
-                socket.emit('join', 'room1');
-            })
-            .catch(error => console.error('Error accessing media devices.', error));
-    });
-
-    endVideoButton.addEventListener('click', () => {
-        startVideoButton.classList.remove('hidden');
-        endVideoButton.classList.add('hidden');
-
-        if (localStream) {
+        function stopLocalStream() {
             localStream.getTracks().forEach(track => track.stop());
             localStream = null;
+            localVideo.srcObject = null;
         }
 
-        localVideo.srcObject = null;
-        remoteVideo.srcObject = null;
-
-        socket.emit('end-video');
-    });
-
-    chatInput.addEventListener('keypress', event => {
-        if (event.key === 'Enter') {
-            const message = chatInput.value;
-            const timestamp = new Date().toLocaleTimeString();
-            socket.emit('chat-message', { username, message, timestamp });
-            chatInput.value = '';
-            displayMessage({ username: 'You', message, timestamp });
+        function displayMessage({ username, message, timestamp }) {
+            const messageElement = document.createElement('div');
+            messageElement.textContent = `${timestamp} ${username}: ${message}`;
+            chat.appendChild(messageElement);
+            chat.scrollTop = chat.scrollHeight;
         }
-    });
-}
 
-function displayMessage({ username, message, timestamp }) {
-    const messageElement = document.createElement('div');
-    messageElement.textContent = `${timestamp} ${username}: ${message}`;
-    chat.appendChild(messageElement);
-    chat.scrollTop = chat.scrollHeight;
-}
-
-function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(config);
-
-    peerConnection.onicecandidate = ({ candidate }) => {
-        if (candidate) {
-            socket.emit('ice-candidate', candidate);
+        function updateUsersList(users) {
+            const userList = document.getElementById('users');
+            userList.innerHTML = '';
+            users.forEach(user => {
+                const userElement = document.createElement('div');
+                userElement.textContent = user;
+                userList.appendChild(userElement);
+            });
         }
-    };
-
-    peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-    };
-
-    peerConnection.onnegotiationneeded = async () => {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('offer', offer);
-    };
-}
 
     </script>
 </body>
