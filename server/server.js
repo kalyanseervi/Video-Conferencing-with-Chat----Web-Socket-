@@ -1,5 +1,3 @@
-// server.js
-
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -8,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
-
+require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
@@ -84,6 +82,8 @@ app.post('/token', (req, res) => {
   });
 });
 
+const rooms = {};
+
 const authenticate = (socket, next) => {
   const token = socket.handshake.query.token;
   if (!token) return next(new Error('Authentication error'));
@@ -101,37 +101,57 @@ io.on('connection', (socket) => {
   console.log('New client connected');
 
   socket.on('join', (room) => {
-    console.log(`Client joined room: ${room}`);
     socket.join(room);
-    socket.emit('joined');
+    socket.room = room;
+
+    if (!rooms[room]) {
+      rooms[room] = [];
+    }
+    rooms[room].push(socket.username);
+
+    console.log(`${socket.username} joined room: ${room}`);
+    io.to(room).emit('user-joined', { username: socket.username, users: rooms[room] });
   });
 
-  socket.on('offer', (offer) => {
-    socket.to('room1').emit('offer', offer);
+  socket.on('leave', () => {
+    const room = socket.room;
+    socket.leave(room);
+
+    if (rooms[room]) {
+      rooms[room] = rooms[room].filter(user => user !== socket.username);
+      if (rooms[room].length === 0) {
+        delete rooms[room];
+      } else {
+        io.to(room).emit('user-left', { username: socket.username, users: rooms[room] });
+      }
+    }
+
+    console.log(`${socket.username} left room: ${room}`);
+    socket.room = null;
   });
 
-  socket.on('answer', (answer) => {
-    socket.to('room1').emit('answer', answer);
+  socket.on('offer', (data) => {
+    socket.to(data.target).emit('offer', { offer: data.offer, from: socket.username });
   });
 
-  socket.on('ice-candidate', (candidate) => {
-    socket.to('room1').emit('ice-candidate', candidate);
+  socket.on('answer', (data) => {
+    socket.to(data.target).emit('answer', { answer: data.answer, from: socket.username });
   });
 
-  socket.on('chat-message', ({ username, message, timestamp }) => {
-    console.log(`Received chat-message: ${message}`);
-    socket.to('room1').emit('chat-message', { username, message, timestamp });
+  socket.on('ice-candidate', (data) => {
+    socket.to(data.target).emit('ice-candidate', { candidate: data.candidate, from: socket.username });
   });
 
-  socket.on('start-video', () => {
-    socket.to('room1').emit('start-video');
-  });
-
-  socket.on('end-video', () => {
-    socket.to('room1').emit('end-video');
+  socket.on('chat-message', (data) => {
+    io.to(data.room).emit('chat-message', { message: data.message, username: socket.username, timestamp: new Date().toLocaleTimeString() });
   });
 
   socket.on('disconnect', () => {
+    if (socket.room) {
+      const room = socket.room;
+      rooms[room] = rooms[room].filter(user => user !== socket.username);
+      io.to(room).emit('user-left', { username: socket.username, users: rooms[room] });
+    }
     console.log('Client disconnected');
   });
 });
